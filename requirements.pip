@@ -1,0 +1,10 @@
+sshuttle>=1.0.0,<2.0.0
+openstacksdk
+os-client-config
+python-novaclient
+python-keystoneclient
+python-openstackclient
+python-heatclient
+python-neutronclient
+python-cinderclient
+python-octaviaclient

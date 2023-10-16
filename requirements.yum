@@ -1,0 +1,9 @@
+yum-utils
+epel-release
+python39
+python39-pip
+gawk
+jq
+iptables
+openssh-clients
+git-core

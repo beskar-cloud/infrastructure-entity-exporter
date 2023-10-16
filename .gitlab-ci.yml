@@ -1,0 +1,55 @@
+stages:
+- build-image
+- release-image
+
+image: registry.gitlab.ics.muni.cz:443/cloud/container-registry/docker:latest
+
+services:
+  - name: registry.gitlab.ics.muni.cz:443/cloud/container-registry/docker:latest-dind
+    alias: docker
+
+variables:
+  DOCKER_EXE: docker
+
+before_script:
+  - apk update
+  - apk add $(cat ci/requirements.apk)
+  - ${DOCKER_EXE} login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "${CI_REGISTRY}"
+  - export VERSION=$(ci/version.sh CHANGELOG.md)
+  - export EXPORTER_VERSION=$(echo "${VERSION}" | grep -Eo "[0-9]+\.[0-9]+\.[0-9]+(-rc[0-9]+|-[0-9a-f]{6,})?")
+
+# build and release container image
+# ---------------------------------------------------------------------------
+build-image:
+  stage: build-image
+  script: |
+    echo "${CI_REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA}" > container-release.uri
+    ${DOCKER_EXE} build --pull -t $(head -1 container-release.uri) --build-arg "VERSION=${VERSION}" --build-arg "BUILD_DATE=$(date +%Y-%m-%dT%H:%M:%S)" --build-arg "CI_BUILD_HOSTNAME=$(hostname)" --build-arg "CI_COMMIT_SHA=${CI_COMMIT_SHA}" --build-arg "CI_BUILD_JOB_NAME=${CI_JOB_NAME}" --build-arg "CI_BUILD_ID=${CI_JOB_ID}" .
+    ${DOCKER_EXE} push $(head -1 container-release.uri)
+  artifacts:
+    expire_in: 2 mo
+    name: ${CI_BUILD_NAME}-${CI_BUILD_REF_NAME}-container-uri
+    paths:
+      - container-release.uri
+
+# release container image
+# ---------------------------------------------------------------------------
+release-image:
+  stage: release-image
+  script: |
+    CONTAINER_IMAGE="$(head -1 container-release.uri)"
+    ${DOCKER_EXE} pull "${CONTAINER_IMAGE}"
+    for i_container_image_tag in ${VERSION} ${EXPORTER_VERSION} latest; do
+      ${DOCKER_EXE} tag "${CONTAINER_IMAGE}" ${CI_REGISTRY_IMAGE}:${i_container_image_tag}
+      ${DOCKER_EXE} push "${CI_REGISTRY_IMAGE}:${i_container_image_tag}"
+      echo "${CI_REGISTRY_IMAGE}:${i_container_image_tag}" >> container-release.uri
+    done
+  only:
+    - /^v[0-9]+\.[0-9]+\.[0-9]+/
+  except:
+    - branches
+  artifacts:
+    expire_in: 2 mo
+    name: ${CI_BUILD_NAME}-${CI_BUILD_REF_NAME}-container-release-uri
+    paths:
+      - container-release.uri
